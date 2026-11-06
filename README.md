@@ -13,7 +13,7 @@ y orquesta el servicio de forma automática y trazable.
 | Seguridad | Dependabot · Snyk Open Source · Snyk Code · Snyk Container (bloqueante) |
 | Entrega | Docker multi-stage · GitHub Container Registry · Docker Compose (2 réplicas + nginx) |
 
-**Integrantes:** _Integrante A_ · _Integrante B_ — ver [reparto del trabajo](#9-reparto-del-trabajo)
+**Integrantes:** Nicolás Tapia · Kevin Carazas — ver [reparto del trabajo](#9-reparto-del-trabajo)
 
 ---
 
@@ -231,40 +231,40 @@ verificar en el historial del repositorio (`git log` o la pestaña *Commits*).
 
 | # | Commit | Autor | Indicador |
 |---|--------|-------|-----------|
-| 1 | `build:` Actuator y endpoints de salud (`pom.xml`, `application.yml`) | _Integrante A_ | IE1 · IE4 |
-| 2 | `build(docker):` imagen optimizada y metadatos de trazabilidad (`Dockerfile`) | _Integrante B_ | IE1 · IE4 |
-| 3 | `test:` validaciones y endpoint de salud (`src/test/`) | _Integrante A_ | IE2 |
-| 4 | `chore:` Dependabot (`.github/dependabot.yml`) | _Integrante B_ | IE3 |
-| 5 | `feat(orquestacion):` Compose con réplicas, límites y nginx (`docker-compose.yml`, `nginx/`) | _Integrante A_ | IE3 · IE5 |
-| 6 | `ci:` pipeline CI/CD con Snyk y deploy (`.github/workflows/pipeline.yml`) | _Integrante B_ | IE1 · IE2 · IE3 · IE4 |
+| 1 | `build:` Actuator y endpoints de salud (`pom.xml`, `application.yml`) | Nicolás Tapia | IE1 · IE4 |
+| 2 | `build(docker):` imagen optimizada y metadatos de trazabilidad (`Dockerfile`) | Kevin Carazas | IE1 · IE4 |
+| 3 | `test:` validaciones y endpoint de salud (`src/test/`) | Nicolás Tapia | IE2 |
+| 4 | `chore:` Dependabot (`.github/dependabot.yml`) | Kevin Carazas | IE3 |
+| 5 | `feat(orquestacion):` Compose con réplicas, límites y nginx (`docker-compose.yml`, `nginx/`) | Nicolás Tapia | IE3 · IE5 |
+| 6 | `ci:` pipeline CI/CD con Snyk y deploy (`.github/workflows/pipeline.yml`) | Kevin Carazas | IE1 · IE2 · IE3 · IE4 |
 | 7 | `docs:` README | Ambos | Todos |
 
-**Integrante A — servicio, calidad y orquestación.** Habilitó los endpoints de salud de los que
+**Nicolás Tapia — servicio, calidad y orquestación.** Habilitó los endpoints de salud de los que
 dependen el HEALTHCHECK, Compose y la verificación post-deploy; escribió las pruebas de casos
 críticos (validaciones 400, salud, endpoints no expuestos) y diseñó la orquestación con 2 réplicas,
 límites de recursos, healthchecks y balanceador nginx.
 
-**Integrante B — contenedor, seguridad y automatización.** Optimizó la imagen Docker y le agregó
+**Kevin Carazas — contenedor, seguridad y automatización.** Optimizó la imagen Docker y le agregó
 los metadatos de commit y versión; configuró Dependabot y construyó el pipeline de GitHub Actions:
 etapas encadenadas, análisis Snyk con bloqueo, publicación en GHCR y despliegue trazable.
 
-Los dos trabajos se integran en el pipeline: el job `deploy` (Integrante B) levanta la orquestación
-de Compose (Integrante A) y la valida con los endpoints de salud (Integrante A).
+Los dos trabajos se integran en el pipeline: el job `deploy` (Kevin Carazas) levanta la orquestación
+de Compose (Nicolás Tapia) y la valida con los endpoints de salud (Nicolás Tapia).
 
 ---
 
 ## 10. Conclusiones y reflexiones individuales
 
-### Reflexión — _Integrante A_ (commits 1, 3 y 5)
+### Reflexión — Nicolás Tapia (commits 1, 3 y 5)
 
-Aprendí que un contenedor corriendo no significa un servicio sano: sin `/actuator/health` el
+Aprendí que un contenedor corriendo no significa un servicio sano, sin `/actuator/health` el
 healthcheck nunca habría pasado. Escribir pruebas de casos críticos me obligó a pensar cómo se rompe
 el servicio, y al orquestar con Compose entendí que escalar es definir réplicas, límites de recursos
 y un balanceador que solo envíe tráfico a instancias sanas.
 
-### Reflexión — _Integrante B_ (commits 2, 4 y 6)
+### Reflexión — Kevin Carazas (commits 2, 4 y 6)
 
 Aprendí a reducir y asegurar la imagen con multi-stage y usuario sin privilegios, y que la seguridad
-debe ser automática y bloqueante: Dependabot y Snyk detienen el pipeline ante vulnerabilidades graves.
-Armar el pipeline me enseñó a encadenar etapas y desplegar la misma imagen probada, con trazabilidad
-por commit; lo más difícil fue ajustar los permisos y secretos de cada job.
+debe ser automática y bloqueante, tambien que Dependabot y Snyk detienen el pipeline ante vulnerabilidades graves. Por ultimo,
+armar el pipeline me enseñó a encadenar etapas y desplegar la misma imagen probada, con trazabilidad
+por commit, lo más difícil fue ajustar los permisos y secretos de cada job.
