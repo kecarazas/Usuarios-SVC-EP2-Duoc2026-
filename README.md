@@ -255,14 +255,14 @@ de Compose (Nicolás Tapia) y la valida con los endpoints de salud (Nicolás Tap
 
 ## 10. Conclusiones y reflexiones individuales
 
-### Reflexión — Nicolás Tapia (commits 1, 3 y 5)
+### Reflexión — Nicolás Tapia
 
 Aprendí que un contenedor corriendo no significa un servicio sano, sin `/actuator/health` el
 healthcheck nunca habría pasado. Escribir pruebas de casos críticos me obligó a pensar cómo se rompe
 el servicio, y al orquestar con Compose entendí que escalar es definir réplicas, límites de recursos
 y un balanceador que solo envíe tráfico a instancias sanas.
 
-### Reflexión — Kevin Carazas (commits 2, 4 y 6)
+### Reflexión — Kevin Carazas
 
 Aprendí a reducir y asegurar la imagen con multi-stage y usuario sin privilegios, y que la seguridad
 debe ser automática y bloqueante, tambien que Dependabot y Snyk detienen el pipeline ante vulnerabilidades graves. Por ultimo,
