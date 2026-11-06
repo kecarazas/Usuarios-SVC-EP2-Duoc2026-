@@ -122,4 +122,28 @@ class UsuarioControllerTest {
         when(service.delete(1L)).thenReturn(false);
         mockMvc.perform(delete("/api/usuarios/1")).andExpect(status().isNotFound());
     }
+
+    @Test
+    void crearSinNombreDevuelve400() throws Exception {
+        mockMvc.perform(post("/api/usuarios")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"rol\":\"admin\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void crearConJsonMalformadoDevuelve400() throws Exception {
+        mockMvc.perform(post("/api/usuarios")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{nombre:"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void actualizarInvalidoDevuelve400() throws Exception {
+        mockMvc.perform(put("/api/usuarios/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"nombre\":\"   \"}"))
+            .andExpect(status().isBadRequest());
+    }
 }
