@@ -1,8 +1,60 @@
+# =============================================================================
+# IE5 — Orquestación con Docker Compose
+#   - usuarios-svc: 2 réplicas, límites/reservas de CPU y memoria, healthcheck,
+#     reinicio automático. No publica puertos: solo se accede vía el balanceador.
+#   - lb (nginx): único punto de entrada, reparte carga entre las réplicas.
+#
+# IE4 — El pipeline define IMAGE_NAME e IMAGE_TAG (SHA del commit) para que lo
+# desplegado sea exactamente la imagen construida y escaneada.
+#
+# Escalar a mano:  docker compose up -d --scale usuarios-svc=4
+# =============================================================================
 services:
   usuarios-svc:
-    build: .
-    image: duoc/caso10-usuarios:1.0.0
-    container_name: caso10-usuarios-svc
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
+        APP_VERSION: ${APP_VERSION:-local}
+    image: ${IMAGE_NAME:-usuarios-svc}:${IMAGE_TAG:-local}
+    expose:
+      - "8080"
+    environment:
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0 -XX:+UseContainerSupport -XX:+ExitOnOutOfMemoryError"
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  lb:
+    image: nginx:1.27-alpine
     ports:
-      - "${PORT:-8080}:8080"
+      - "${PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      usuarios-svc:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
