@@ -1,0 +1,25 @@
+@startuml C4-2-Contenedores
+!include <C4/C4_Container>
+
+title ms-usuarios — C4 Nivel 2: Contenedores
+
+LAYOUT_WITH_LEGEND()
+
+Person(actor, "Remitente", "Crea y cotiza envíos")
+System_Boundary(sb, "ms-usuarios (dominio de Usuarios)") {
+  Container(api, "API de Usuarios", "Spring Boot 3 · Java 21 · ECS Fargate", "Expone /api/usuarios y persiste el dominio con su propia base de datos")
+  ContainerDb(db, "BD de identidad", "Aurora Serverless (PostgreSQL)", "Usuarios, roles y perfiles (propia del dominio)")
+}
+
+Container(apigw, "API Gateway", "Amazon API Gateway", "JWT + throttling")
+Container(cognito, "Amazon Cognito", "Servicio AWS", "Autenticación y emisión de JWT por rol")
+Container(ev, "Amazon EventBridge", "Servicio AWS", "usuario.registrado / rol.cambiado")
+
+Rel(actor, apigw, "Usa la API", "HTTPS + JWT")
+Rel(apigw, api, "Enruta /api/usuarios", "REST")
+Rel(api, db, "Lee/escribe usuarios", "JPA / SQL (TLS)")
+Rel(api, cognito, "Registra y autentica", "AWS SDK")
+Rel(api, ev, "Publica eventos de usuario", "AWS SDK")
+
+SHOW_LEGEND()
+@enduml

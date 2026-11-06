@@ -1,0 +1,21 @@
+@startuml C4-1-Contexto
+!include <C4/C4_Context>
+
+title ms-usuarios — C4 Nivel 1: Contexto
+
+LAYOUT_WITH_LEGEND()
+
+Person(actor, "Remitente", "Crea y cotiza envíos")
+System(sys, "ms-usuarios", "Usuarios del caso caso10: registra y autentica a los usuarios del sistema, administra sus roles y perfiles, y entrega los tokens de identidad (JWT) que el resto de los servicios consume para autorizar cada operación")
+
+System_Ext(core, "ms-envios", "Envíos del caso (servicio central)")
+System_Ext(notif, "ms-notificaciones", "Notificaciones del caso")
+System_Ext(bus, "Amazon EventBridge", "Bus de eventos de dominio")
+
+Rel(actor, sys, "Usa el servicio", "HTTPS / REST + JWT")
+Rel(sys, core, "Envíos del caso (servicio central)", "REST / eventos")
+Rel_Back(notif, sys, "Notificaciones del caso", "EventBridge / SQS")
+Rel(sys, bus, "Bus de eventos de dominio", "AWS SDK")
+
+SHOW_LEGEND()
+@enduml

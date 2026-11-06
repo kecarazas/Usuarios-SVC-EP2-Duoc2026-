@@ -1,0 +1,8 @@
+services:
+  usuarios-svc:
+    build: .
+    image: duoc/caso10-usuarios:1.0.0
+    container_name: caso10-usuarios-svc
+    ports:
+      - "${PORT:-8080}:8080"
+    restart: unless-stopped

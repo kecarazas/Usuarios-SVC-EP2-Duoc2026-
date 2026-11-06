@@ -1,0 +1,43 @@
+@startuml Secuencia-Usuario
+title ms-usuarios — Diagrama de secuencia: registro y login (emisión de JWT)
+
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 320
+skinparam sequenceMessageAlignment center
+skinparam roundCorner 8
+autonumber "<b>0."
+
+participant "App Cliente" as app #D5E8D4
+participant "API Gateway" as gw #DAE8FC
+box "ms-usuarios" #FFF2CC
+  participant "UsuarioController" as rest
+  participant "UsuarioService" as svc
+  participant "CognitoClient" as cog
+  participant "Repository" as repo
+end box
+participant "Cognito" as idp #E1D5E7
+participant "EventBridge" as ev #F8CECC
+
+== Registro de usuario ==
+"Remitente" -> app : completa el formulario de registro
+app -> gw : POST /api/usuarios (nuevo usuario)
+gw -> rest : valida JWT/throttling y enruta
+rest -> svc : registrar(usuario)
+svc -> cog : adminCreateUser / signUp
+cog -> idp : crea el usuario con contraseña hasheada
+idp --> cog : OK
+cog --> svc : usuario creado
+svc -> repo : persiste perfil y rol
+svc -> ev : publica usuario.registrado
+rest --> app : 201 Created
+
+== Login (emisión de JWT) ==
+app -> idp : initiateAuth (usuario + contraseña)
+idp --> app : JWT firmado (rol del usuario)
+note over app, idp
+  <b>Identidad centralizada (STRIDE-S)</b>
+  Solo este servicio (vía Cognito) valida credenciales;
+  el resto del sistema confía en el JWT firmado.
+end note
+
+@enduml

@@ -1,0 +1,30 @@
+@startuml C4-3-Componentes
+!include <C4/C4_Component>
+
+title ms-usuarios — C4 Nivel 3: Componentes internos
+
+LAYOUT_WITH_LEGEND()
+
+Person(actor, "Remitente", "Crea y cotiza envíos")
+Container_Boundary(ms, "ms-usuarios — Spring Boot 3 (ECS Fargate)") {
+
+  Component(rest, "UsuarioController", "Spring MVC REST", "Expone /api/usuarios: crear, consultar, actualizar y eliminar")
+  Component(svc, "UsuarioService", "Java 21", "Lógica de negocio del dominio: validaciones, reglas y transiciones")
+  Component(cognito, "CognitoClient", "AWS SDK", "Registro, login y emisión de JWT por rol")
+  ComponentDb(repo, "UsuarioRepository", "Spring Data JPA", "Persistencia en la base de datos propia del servicio")
+  Component(pub, "PublicadorEventos", "AWS SDK (EventBridge)", "Publica usuario.registrado y rol.cambiado")
+}
+
+Container(apigw, "API Gateway", "Amazon API Gateway", "JWT + throttling")
+Container(ev, "Amazon EventBridge", "Servicio AWS", "Bus de eventos de dominio")
+
+Rel(actor, apigw, "Usa la API", "HTTPS + JWT")
+Rel(apigw, rest, "Enruta /api/usuarios", "REST")
+Rel(rest, svc, "Delega el caso de uso")
+Rel(svc, cognito, "Autentica/registra", "AWS SDK")
+Rel(svc, repo, "Persiste el perfil", "JPA / SQL")
+Rel(svc, pub, "Publica el evento", "AWS SDK")
+Rel(pub, ev, "Envía el evento", "AWS SDK")
+
+SHOW_LEGEND()
+@enduml
