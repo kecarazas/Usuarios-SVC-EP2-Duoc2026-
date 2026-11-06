@@ -24,3 +24,24 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+# Endpoints de salud usados por HEALTHCHECK (Dockerfile), docker-compose y el
+# job de deploy del pipeline. Solo se expone "health" e "info" (mínimo privilegio).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: usuarios-svc
+    version: ${APP_VERSION:local}
+    commit: ${GIT_SHA:local}
