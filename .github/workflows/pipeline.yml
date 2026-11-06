@@ -1,0 +1,339 @@
+# =============================================================================
+# Pipeline CI/CD — usuarios-svc (EP2 DOY0101)
+#
+#   build-test ──► docker-build ──► security ──► deploy (solo main)
+#      IE2             IE1            IE3          IE4 + IE5
+#
+# Cada etapa depende de la anterior: si una prueba o el análisis de seguridad
+# falla, el pipeline se detiene y NO se despliega.
+# =============================================================================
+name: CI-CD usuarios-svc
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Un solo pipeline por rama a la vez; uno nuevo cancela al anterior.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Mínimo privilegio por defecto; cada job pide solo lo que necesita.
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: usuarios-svc
+  JAVA_VERSION: "21"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # IE2 — Pruebas automatizadas + cobertura
+  # ---------------------------------------------------------------------------
+  build-test:
+    name: "IE2 · Build y pruebas"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # mvn verify = compilación + tests unitarios (JUnit/MockMvc) + Cucumber
+      # + JaCoCo check. Falla si una prueba falla o si la cobertura baja del umbral.
+      - name: Pruebas unitarias, BDD y cobertura
+        run: mvn -B verify
+
+      - name: Resumen de cobertura
+        if: always()
+        run: |
+          CSV=target/site/jacoco/jacoco.csv
+          if [ -f "$CSV" ]; then
+            awk -F, 'NR>1 {m+=$8; c+=$9} END {printf "### Cobertura de líneas (JaCoCo): %.1f%% (%d/%d)\n", (c*100)/(m+c), c, m+c}' "$CSV" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "### Pruebas" >> "$GITHUB_STEP_SUMMARY"
+          grep -h "Tests run" target/surefire-reports/*.txt | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Publicar reportes de pruebas y cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-pruebas-${{ github.sha }}
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # IE1 — Construcción de la imagen optimizada
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: "IE1 · Build imagen Docker"
+    needs: build-test
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Trazabilidad: la imagen se etiqueta con el SHA corto del commit y con
+      # una versión semántica v1.0.<número de ejecución>.
+      - name: Calcular etiquetas
+        id: meta
+        run: |
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "version=v1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Construir imagen (multi-stage)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            APP_VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          outputs: type=docker,dest=${{ runner.temp }}/imagen.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verificar imagen (tamaño, usuario no root, healthcheck)
+        run: |
+          docker load -i "${{ runner.temp }}/imagen.tar"
+          IMG="${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+          USER=$(docker image inspect "$IMG" --format '{{.Config.User}}')
+          HC=$(docker image inspect "$IMG" --format '{{json .Config.Healthcheck.Test}}')
+          SIZE=$(docker image inspect "$IMG" --format '{{.Size}}' | awk '{printf "%.0f MB", $1/1024/1024}')
+          echo "Usuario: $USER | Tamaño: $SIZE | Healthcheck: $HC"
+          [ -n "$USER" ] && [ "$USER" != "root" ] || { echo "::error::La imagen corre como root"; exit 1; }
+          [ "$HC" != "null" ] || { echo "::error::La imagen no tiene HEALTHCHECK"; exit 1; }
+          {
+            echo "### Imagen \`$IMG\`"
+            echo "| Usuario | Tamaño | Healthcheck |"
+            echo "|---|---|---|"
+            echo "| $USER | $SIZE | ✅ |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar imagen como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: imagen-docker
+          path: ${{ runner.temp }}/imagen.tar
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # IE3 — Análisis de seguridad con BLOQUEO
+  #   Política: cualquier hallazgo de severidad ALTA o CRÍTICA detiene el
+  #   pipeline (exit code != 0) y el deploy no se ejecuta.
+  # ---------------------------------------------------------------------------
+  security:
+    name: "IE3 · Seguridad (Snyk)"
+    needs: docker-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # para publicar alertas en la pestaña Security
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar que existe SNYK_TOKEN
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "::error::Falta el secret SNYK_TOKEN (Settings → Secrets and variables → Actions). Sin análisis de seguridad no se despliega."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Instalar Snyk CLI
+        run: npm install -g snyk
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: imagen-docker
+          path: ${{ runner.temp }}
+
+      - name: Cargar imagen
+        run: docker load -i "${{ runner.temp }}/imagen.tar"
+
+      # 1) Dependencias (SCA): bloquea con vulnerabilidades altas/críticas
+      #    que tengan una actualización disponible.
+      - name: Snyk Open Source — dependencias Maven
+        run: |
+          snyk test --severity-threshold=high --fail-on=upgradable \
+            --sarif-file-output=snyk-deps.sarif
+
+      # 2) Código fuente (SAST).
+      - name: Snyk Code — análisis estático del código
+        run: |
+          snyk code test --severity-threshold=high \
+            --sarif-file-output=snyk-code.sarif
+
+      # 3) Imagen de contenedor (SO base + librerías del jar).
+      - name: Snyk Container — imagen Docker
+        run: |
+          snyk container test "${{ env.IMAGE_NAME }}:${{ needs.docker-build.outputs.tag }}" \
+            --file=Dockerfile --severity-threshold=high \
+            --sarif-file-output=snyk-container.sarif
+
+      # Alertas: los hallazgos se publican en Security → Code scanning
+      # (aunque un paso anterior haya fallado).
+      - name: Publicar alertas (dependencias)
+        if: always() && hashFiles('snyk-deps.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-deps.sarif
+          category: snyk-dependencias
+
+      - name: Publicar alertas (código)
+        if: always() && hashFiles('snyk-code.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-codigo
+
+      - name: Publicar alertas (contenedor)
+        if: always() && hashFiles('snyk-container.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-container.sarif
+          category: snyk-contenedor
+
+      - name: Guardar reportes de seguridad
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportes-seguridad-${{ github.sha }}
+          path: "*.sarif"
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # IE4 + IE5 — Despliegue automático y trazable (entorno cloud simulado)
+  #   Solo en push a main y solo si build-test, docker-build y security pasaron.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: "IE4 · Deploy (entorno simulado)"
+    needs: [docker-build, security]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # crear el tag git de la versión
+      packages: write   # publicar la imagen en GitHub Container Registry
+    environment: produccion-simulada   # historial en la pestaña Deployments
+    env:
+      IMAGE_TAG: ${{ needs.docker-build.outputs.tag }}
+      APP_VERSION: ${{ needs.docker-build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: imagen-docker
+          path: ${{ runner.temp }}
+
+      - name: Cargar la imagen ya probada y escaneada
+        run: docker load -i "${{ runner.temp }}/imagen.tar"
+
+      # Registro de la imagen: misma imagen, publicada con SHA y versión.
+      - name: Publicar imagen en GHCR
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REG="ghcr.io/$OWNER/${{ env.IMAGE_NAME }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for T in "$IMAGE_TAG" "$APP_VERSION" latest; do
+            docker tag "${{ env.IMAGE_NAME }}:$IMAGE_TAG" "$REG:$T"
+            docker push "$REG:$T"
+          done
+          echo "REGISTRY_IMAGE=$REG" >> "$GITHUB_ENV"
+
+      # IE5: Docker Compose levanta 2 réplicas + balanceador y espera a que
+      # todos los healthchecks estén "healthy".
+      - name: Desplegar con Docker Compose
+        run: |
+          docker compose up -d --no-build --wait --wait-timeout 180
+          docker compose ps
+
+      - name: Verificación post-deploy (health + smoke test)
+        run: |
+          set -e
+          BASE=http://localhost:8080
+          curl --fail --silent --show-error "$BASE/actuator/health"; echo
+          # La versión desplegada debe corresponder al commit actual.
+          INFO=$(curl --fail --silent "$BASE/actuator/info")
+          echo "$INFO"
+          echo "$INFO" | grep -q "${{ github.sha }}" || { echo "::error::El commit desplegado no coincide"; exit 1; }
+          # Smoke test del contrato: crear y consultar un usuario.
+          ID=$(curl --fail --silent -X POST "$BASE/api/usuarios" \
+                 -H 'Content-Type: application/json' \
+                 -d '{"nombre":"smoke-test","rol":"ci","email":"ci@example.com"}' | jq -r .id)
+          curl --fail --silent "$BASE/api/usuarios/$ID" | jq .
+          # Escalabilidad: debe haber 2 réplicas sanas.
+          RUNNING=$(docker compose ps usuarios-svc --status running -q | wc -l)
+          echo "Réplicas en ejecución: $RUNNING"
+          [ "$RUNNING" -ge 2 ] || { echo "::error::Se esperaban 2 réplicas"; exit 1; }
+
+      - name: Crear tag de versión en git
+        run: |
+          git tag "$APP_VERSION" "${{ github.sha }}"
+          git push origin "$APP_VERSION" || echo "El tag $APP_VERSION ya existía (re-ejecución)"
+
+      - name: Registro de despliegue (trazabilidad)
+        if: always()
+        run: |
+          mkdir -p deploy-logs
+          docker compose ps > deploy-logs/compose-ps.txt
+          docker compose logs --no-color > deploy-logs/compose-logs.txt
+          docker stats --no-stream > deploy-logs/recursos.txt
+          cat > deploy-logs/despliegue.json <<EOF
+          {
+            "version": "$APP_VERSION",
+            "commit": "${{ github.sha }}",
+            "imagen": "${REGISTRY_IMAGE:-n/a}:$IMAGE_TAG",
+            "autor": "${{ github.actor }}",
+            "run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "fecha_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "resultado": "${{ job.status }}"
+          }
+          EOF
+          cat deploy-logs/despliegue.json
+          {
+            echo "### Despliegue $APP_VERSION"
+            echo "| Campo | Valor |"
+            echo "|---|---|"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Imagen | \`${REGISTRY_IMAGE:-n/a}:$IMAGE_TAG\` |"
+            echo "| Autor | ${{ github.actor }} |"
+            echo "| Resultado | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar logs del despliegue
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-logs-${{ needs.docker-build.outputs.version }}
+          path: deploy-logs/
+          retention-days: 90
+
+      - name: Bajar entorno simulado
+        if: always()
+        run: docker compose down
