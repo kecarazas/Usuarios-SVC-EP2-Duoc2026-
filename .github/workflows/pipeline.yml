@@ -62,7 +62,7 @@ jobs:
 
       - name: Publicar reportes de pruebas y cobertura
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reportes-pruebas-${{ github.sha }}
           path: |
@@ -125,7 +125,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Guardar imagen como artefacto
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: imagen-docker
           path: ${{ runner.temp }}/imagen.tar
@@ -220,7 +220,7 @@ jobs:
 
       - name: Guardar reportes de seguridad
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reportes-seguridad-${{ github.sha }}
           path: "*.sarif"
@@ -328,7 +328,7 @@ jobs:
 
       - name: Guardar logs del despliegue
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deploy-logs-${{ needs.docker-build.outputs.version }}
           path: deploy-logs/
