@@ -164,7 +164,7 @@ jobs:
       - name: Instalar Snyk CLI
         run: npm install -g snyk
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: imagen-docker
           path: ${{ runner.temp }}
@@ -246,7 +246,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: imagen-docker
           path: ${{ runner.temp }}
