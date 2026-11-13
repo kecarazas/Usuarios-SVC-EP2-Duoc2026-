@@ -91,7 +91,7 @@ jobs:
           echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           echo "version=v1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Construir imagen (multi-stage)
         uses: docker/build-push-action@v6
