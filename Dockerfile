@@ -11,7 +11,7 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q package -DskipTests
 
 # ---- Etapa 2: ejecución ----
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 # Trazabilidad (IE4): el pipeline inyecta el SHA del commit y la versión.
 ARG GIT_SHA=local
